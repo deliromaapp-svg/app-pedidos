@@ -1,25 +1,45 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import json
 
-st.title("📝 Pedidos")
+st.title("📝 Sistema de Pedidos")
 
-# Conexión
-conn = st.connection("gsheets", type=GSheetsConnection)
+# Configurar credenciales desde los secretos
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+
+# Obtener credenciales del secreto
+creds_dict = dict(st.secrets["google"])
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+
+# Conectar a Google Sheets
+client = gspread.authorize(creds)
+
+# Abrir el spreadsheet por URL
+sheet_url = st.secrets["google"]["spreadsheet_url"]
+sheet = client.open_by_url(sheet_url).sheet1
 
 # Leer datos
-df = conn.read(worksheet="Sheet1")
-st.write("Datos actuales:", df)
+data = sheet.get_all_records()
+df = pd.DataFrame(data)
 
-# Formulario
-with st.form("form"):
+# Mostrar datos
+st.subheader("📋 Pedidos actuales")
+st.dataframe(df)
+
+# Formulario para nuevo pedido
+st.divider()
+st.subheader("➕ Nuevo pedido")
+
+with st.form("nuevo_pedido"):
     nombre = st.text_input("Nombre")
-    pedido = st.text_input("Pedido")
-    submit = st.form_submit_button("Guardar")
+    pedido = st.text_area("Pedido")
+    enviar = st.form_submit_button("Enviar")
 
-if submit:
-    nuevo = pd.DataFrame({"nombre": [nombre], "pedido": [pedido]})
-    df_nuevo = pd.concat([df, nuevo], ignore_index=True)
-    conn.update(worksheet="Sheet1", data=df_nuevo)
-    st.success("Guardado!")
+if enviar and nombre and pedido:
+    # Agregar nueva fila
+    sheet.append_row([nombre, pedido])
+    st.success("✅ Pedido guardado!")
+    st.balloons()
     st.rerun()
