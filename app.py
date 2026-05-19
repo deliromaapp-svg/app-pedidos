@@ -1,32 +1,62 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from google.oauth2.service_account import Credentials
+import json
 
-st.set_page_config(page_title="Pedidos - DeliRomá", page_icon="📝")
 st.title("📝 Sistema de Pedidos")
-st.markdown("Completá el formulario para hacer tu pedido")
+
+# Configurar credenciales desde los secretos
+if "google" not in st.secrets:
+    st.error("⚠️ No se encontraron los secretos de Google. Configúralos en Settings → Secrets")
+    st.stop()
+
+# Crear credenciales
+credentials = Credentials.from_service_account_info(
+    st.secrets["google"],
+    scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+)
 
 # Conectar a Google Sheets
-conn = st.connection("gsheets", type=GSheetsConnection)
+gc = gspread.authorize(credentials)
+
+# Abrir el spreadsheet
+spreadsheet_url = st.secrets["google"]["spreadsheet_url"]
+try:
+    sheet = gc.open_by_url(spreadsheet_url).sheet1
+except Exception as e:
+    st.error(f"❌ Error al conectar: {e}")
+    st.info("Asegurate de que el enlace del spreadsheet sea correcto y que la cuenta de servicio tenga permisos")
+    st.stop()
 
 # Leer datos existentes
 try:
-    datos = conn.read(worksheet="Sheet1")
-    datos = datos.dropna(how="all")
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
 except:
-    datos = pd.DataFrame()
+    df = pd.DataFrame(columns=["nombre", "pedido"])
 
-# Formulario
-with st.form(key="pedido_form"):
+# Mostrar pedidos existentes
+st.subheader("📋 Pedidos actuales")
+if not df.empty:
+    st.dataframe(df)
+else:
+    st.info("No hay pedidos aún")
+
+# Formulario para nuevos pedidos
+st.divider()
+st.subheader("➕ Nuevo pedido")
+
+with st.form("pedido_form"):
     nombre = st.text_input("👤 Tu nombre")
     pedido = st.text_area("📦 Tu pedido")
     enviar = st.form_submit_button("📤 Enviar pedido")
 
 if enviar:
     if nombre and pedido:
-        nuevo = pd.DataFrame([{"nombre": nombre, "pedido": pedido}])
-        datos_actualizados = pd.concat([datos, nuevo], ignore_index=True)
-        conn.update(worksheet="Sheet1", data=datos_actualizados)
+        # Agregar nueva fila
+        nueva_fila = [nombre, pedido]
+        sheet.append_row(nueva_fila)
         st.success(f"✅ ¡Gracias {nombre}! Pedido guardado.")
         st.balloons()
         st.rerun()
